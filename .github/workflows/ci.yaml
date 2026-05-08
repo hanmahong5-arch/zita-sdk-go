@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        # No -race: GitHub Actions runners support cgo so we *could* enable
+        # it, but the v0.1.x SDK has zero goroutines outside gin's own
+        # request handling — race detection there is gin's responsibility,
+        # not ours. Will revisit when the SDK gains its own concurrency.
+        run: go test -count=1 ./...
+
+  # Probes the live STAGE platform (identity.lurus.cn → R6 43.226.38.244).
+  # No Tailscale needed: identity.lurus.cn is the public-facing domain. The
+  # job is gated on a successful /sli probe so a STAGE outage doesn't burn
+  # CI cycles, and on push-to-main only so PRs don't hammer prod-class
+  # infrastructure on every revision.
+  #
+  # What this job does NOT do (intentional, until Layer C lands):
+  #   - Mint or roundtrip a real session token (would require sharing
+  #     IDENTITY_SESSION_SECRET with GHA, and symmetric HMAC means whoever
+  #     holds the secret can sign — too risky for CI).
+  #   - Test cookie behaviour across subdomains (covered by middleware
+  #     unit tests with a synthetic in-process server).
+  e2e-stage:
+    name: E2E against STAGE
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Probe STAGE reachability
+        id: probe
+        run: |
+          if curl -fsS --max-time 10 https://identity.lurus.cn/sli > /dev/null; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+            echo "STAGE platform reachable; running e2e"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=e2e skipped::STAGE platform unreachable from CI runner"
+          fi
+
+      - name: Run e2e tests
+        if: steps.probe.outputs.ready == 'true'
+        env:
+          PLATFORM_STAGE_URL: https://identity.lurus.cn
+          PLATFORM_STAGE_REACHABLE: "1"
+        run: go test -count=1 -tags=e2e -v -run TestE2E ./...
