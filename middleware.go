@@ -1,7 +1,6 @@
 package zita
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 
@@ -41,15 +40,7 @@ func (c *Client) AuthMiddleware() gin.HandlerFunc {
 			// Don't leak "expired" vs "invalid" to the client — same
 			// envelope, same status. Caller-side logging is fine since
 			// the upstream consumer's logs don't help an attacker.
-			msg := "Invalid or expired session"
-			if errors.Is(err, ErrSessionExpired) {
-				// The HTTP-layer message stays uniform; we only branch
-				// here in case a future debug-mode flag wants to
-				// surface the distinction. Keeping the structure now
-				// avoids churning middleware shape later.
-				msg = "Invalid or expired session"
-			}
-			abortUnauthorized(ctx, msg)
+			abortUnauthorized(ctx, "Invalid or expired session")
 			return
 		}
 
