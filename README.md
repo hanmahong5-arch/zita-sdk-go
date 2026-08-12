@@ -11,14 +11,11 @@ implementing `zita.IdentityProvider`).
 
 ## What it does
 
-Without this SDK every Lurus consumer (lucrum / lutu / admin / switch /
-newhub) hand-writes the same code: build a redirect URL to
-`identity.lurus.cn`, parse the returned cookie, HMAC-verify the session
-token, fetch `/whoami`, surface `401` on bad sessions. ~700 LOC each, and
-the first time the platform changes its session shape every consumer
-breaks.
-
-This SDK collapses that into three calls:
+Without this SDK every consumer (lucrum / lutu / admin / switch / newhub)
+hand-writes ~700 LOC: redirect URL to `identity.lurus.cn`, parse returned cookie,
+HMAC-verify session token, fetch `/whoami`, surface `401` on bad sessions — and all
+break the first time the platform changes its session shape. This SDK collapses it
+into three calls:
 
 ```go
 import "github.com/hanmahong5-arch/zita-sdk-go"
@@ -59,29 +56,23 @@ omitted — they will be added when a real consumer needs them, not before.
 
 ## Dependency contract
 
-`SessionSecret` MUST equal `platform-core`'s `SessionSecret` (the HMAC key
-the platform uses to sign session tokens). The SDK does **not** mint
-tokens — it only verifies the ones the platform sent. Distribution is
-out-of-band (K8s Secret synced by ops); the SDK never fetches it from a
-network service.
+`SessionSecret` MUST equal `platform-core`'s `SessionSecret` (the HMAC key signing
+session tokens). The SDK does **not** mint tokens — it only verifies ones the platform
+sent. Distribution is out-of-band (K8s Secret synced by ops); the SDK never fetches it
+over the network.
 
-Rotation: when the platform rotates `SessionSecret`, consumers must
-update their env in lockstep. The platform's
-`credential_rotation_worker` provides a `_NEXT` grace window for
-rolling updates — consumers that need this window can supply a
-secondary `SessionSecretNext` field on `Config` (added when first
-rotation drill consumer needs it).
+Rotation: when the platform rotates `SessionSecret`, consumers update env in lockstep.
+The platform's `credential_rotation_worker` provides a `_NEXT` grace window for rolling
+updates — consumers needing it can supply a secondary `SessionSecretNext` field on
+`Config` (added when the first rotation-drill consumer needs it).
 
 ## Testing
 
-The SDK is verified against the **live STAGE** platform (R6,
-`identity.lurus.cn`) on every CI run. There is **no mock platform** —
-the SDK's whole value is "talks to platform correctly", and a mock would
-just test itself.
-
-CI workflow lives at `.github/workflows/ci.yaml` (added at v0.1.0).
-Joins the Tailnet via `tailscale/github-action`, runs `go test ./...`
-including the e2e suite gated on `PLATFORM_STAGE_REACHABLE=1`.
+Verified against the **live STAGE** platform (R6, `identity.lurus.cn`) on every CI run.
+No mock platform — the SDK's whole value is "talks to platform correctly", a mock would
+just test itself. CI workflow at `.github/workflows/ci.yaml` (added at v0.1.0): joins the
+Tailnet via `tailscale/github-action`, runs `go test ./...` incl. the e2e suite gated on
+`PLATFORM_STAGE_REACHABLE=1`.
 
 ## License
 
